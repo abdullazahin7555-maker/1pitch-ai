@@ -138,7 +138,8 @@ LEAGUES = {
     "La Liga": "PD",
     "Champions League": "CL",
     "Serie A": "SA",
-    "Bundesliga": "BL1"
+    "Bundesliga": "BL1",
+    "FIFA World Cup 🏆": "WC"  # Add this!
 }
 
 st.sidebar.title("🏆 Global Football Hub")
@@ -208,14 +209,15 @@ st.sidebar.subheader("💾 Export Chat History")
 # Initialize Chat Messages
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are 'PitchAI', an expert football virtual assistant. "
-                "You know everything about football tactics, players, history, and real-time scores across major world leagues. "
-                "Keep responses enthusiastic, accurate, and concise."
-            )
-        },
+     {
+    "role": "system",
+    "content": (
+        "You are 'PitchAI', an expert football virtual assistant. "
+        "You know everything about football tactics, players, history, real-time scores, "
+        "and legendary FIFA World Cup moments (from past tournaments up to the 2026 World Cup!). "
+        "Keep responses enthusiastic, accurate, and concise."
+    )
+}
         {
             "role": "assistant",
             "content": f"Welcome back! I am tuned into the {selected_league_name}. Switch leagues in the sidebar or ask me anything!"
