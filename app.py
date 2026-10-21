@@ -131,7 +131,7 @@ league_code = LEAGUES[selected_league_name]
 
 def fetch_finished_matches(code):
     if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE" or not FOOTBALL_DATA_API_KEY:
-        st.warning("⚠️ FOOTBALL_DATA_API_KEY is missing in Streamlit Secrets. Please add it to view match telemetry.")
+        st.warning("⚠️ FOOTBALL_DATA_API_KEY is missing in Streamlit Secrets.")
         return []
     url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=FINISHED"
     headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
@@ -139,10 +139,21 @@ def fetch_finished_matches(code):
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             return res.json().get("matches", [])
-        else:
-            st.error(f"API Error Code: {res.status_code}")
-    except Exception as e:
-        st.error(f"Connection Error: {e}")
+    except Exception:
+        pass
+    return []
+
+def fetch_upcoming_or_live_matches(code):
+    if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE" or not FOOTBALL_DATA_API_KEY:
+        return []
+    url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=SCHEDULED,TIMED,IN_PLAY,PAUSED"
+    headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
+    try:
+        res = requests.get(url, headers=headers)
+        if res.status_code == 200:
+            return res.json().get("matches", [])
+    except Exception:
+        pass
     return []
 
 def fetch_standings(code):
@@ -175,7 +186,13 @@ def get_team_league_position(standings_json, team_id):
 # ----------------------------------------------------
 st.title("⚽ PitchAI Virtual Assistant")
 
-tab1, tab2, tab3 = st.tabs(["💬 PitchAI Chat", "📅 Match Center & Telemetry", "🏆 League Standings"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "💬 PitchAI Chat", 
+    "📅 Match Center & Telemetry", 
+    "🏆 League Standings", 
+    "⚡ Match Status"
+])
+
 # --- TAB 1: Chatbot Interface ---
 with tab1:
     st.caption(f"Currently tracking: {selected_league_name}")
@@ -245,18 +262,9 @@ with tab2:
         
         home_team = selected_match["homeTeam"]
         away_team = selected_match["awayTeam"]
-        score = selected_match.get("score", {})
-        ft_score = score.get("fullTime", {})
-        h_score = ft_score.get("home", 0) if ft_score.get("home") is not None else 0
-        a_score = ft_score.get("away", 0) if ft_score.get("away") is not None else 0
-        
-        # Get League Standings Positions
-        home_pos, home_pts = get_team_league_position(standings_data, home_team["id"])
-        away_pos, away_pts = get_team_league_position(standings_data, away_team["id"])
         
         st.markdown("---")
         
-        # Goals parser safely checking multiple data formats
         goals = selected_match.get("goals", [])
         if goals:
             st.markdown("#### ⚽ Goal Scorers")
@@ -268,7 +276,6 @@ with tab2:
         else:
             st.info("Goal scorer minute timeline is not indexed for this specific match feed.")
 
-        # Starting Lineups Section
         st.markdown("---")
         st.subheader("📋 Starting Lineups & Squads")
         
@@ -288,9 +295,7 @@ with tab2:
                     st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
         else:
             st.info("💡 Generating tactical starting XI using PitchAI Telemetry...")
-            
             lineup_prompt = f"Provide the likely starting 11 lineup and formation for a match between {home_team['name']} and {away_team['name']}. Format as two clean bulleted lists."
-            
             try:
                 lineup_res = groq_client.chat.completions.create(
                     model=SELECTED_MODEL,
@@ -303,7 +308,8 @@ with tab2:
                 st.markdown(lineup_res.choices[0].message.content)
             except Exception:
                 st.warning("Lineup telemetry unavailable.")
-                # --- TAB 3: Live League Standings ---
+
+# --- TAB 3: Live League Standings ---
 with tab3:
     st.header(f"🏆 {selected_league_name} Live Standings")
     
@@ -311,9 +317,7 @@ with tab3:
     
     if standings_json and "standings" in standings_json:
         try:
-            # football-data.org typically stores the main table in standings[0]['table']
             table_data = standings_json["standings"][0]["table"]
-            
             formatted_table = []
             for row in table_data:
                 formatted_table.append({
@@ -328,14 +332,35 @@ with tab3:
                     "GD": row.get("goalDifference"),
                     "Pts": row.get("points")
                 })
-            
-            # Display interactive Streamlit dataframe
-            st.dataframe(
-                formatted_table,
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(formatted_table, use_container_width=True, hide_index=True)
         except Exception as e:
             st.error(f"Could not parse standings table: {e}")
     else:
-        st.warning("⚠️ Standings data unavailable. Make sure your `FOOTBALL_DATA_API_KEY` is configured in Streamlit secrets.")
+        st.warning("⚠️ Standings data unavailable. Check your `FOOTBALL_DATA_API_KEY`.")
+
+# --- TAB 4: Match Status & Schedule ---
+with tab4:
+    st.header(f"⚡ {selected_league_name} Match Status & Schedule")
+    
+    status_matches = fetch_upcoming_or_live_matches(league_code)
+    
+    if status_matches:
+        match_status_list = []
+        for m in status_matches:
+            home_name = m.get('homeTeam', {}).get('name', 'Home')
+            away_name = m.get('awayTeam', {}).get('name', 'Away')
+            status = m.get('status', 'UNKNOWN')
+            utc_date = m.get('utcDate', '')
+            matchday = m.get('matchday', '-')
+            
+            match_status_list.append({
+                "Matchday": f"MD {matchday}",
+                "Home Team": home_name,
+                "Status": status,
+                "Away Team": away_name,
+                "Kickoff (UTC)": utc_date.replace('T', ' ')[:16] if utc_date else '-'
+            })
+            
+        st.dataframe(match_status_list, use_container_width=True, hide_index=True)
+    else:
+        st.info(f"No upcoming or live matches currently scheduled for {selected_league_name}.")
