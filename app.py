@@ -114,7 +114,7 @@ def play_audio(text):
         st.error(f"Audio notice: {e}")
 
 # ----------------------------------------------------
-# 4. API Functions for Match Data & Standings
+# 4. API Helpers
 # ----------------------------------------------------
 LEAGUES = {
     "Premier League": "PL",
@@ -129,8 +129,7 @@ selected_league_name = st.sidebar.selectbox("Select Competition", list(LEAGUES.k
 league_code = LEAGUES[selected_league_name]
 
 def fetch_finished_matches(code):
-    if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE" or not FOOTBALL_DATA_API_KEY:
-        st.warning("⚠️ FOOTBALL_DATA_API_KEY is missing in Streamlit Secrets. Please add it to view match telemetry.")
+    if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
         return []
     url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=FINISHED"
     headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
@@ -138,10 +137,8 @@ def fetch_finished_matches(code):
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             return res.json().get("matches", [])
-        else:
-            st.error(f"API Error Code: {res.status_code}")
-    except Exception as e:
-        st.error(f"Connection Error: {e}")
+    except Exception:
+        pass
     return []
 
 def fetch_standings(code):
@@ -169,50 +166,31 @@ def get_team_league_position(standings_json, team_id):
         pass
     return "N/A", "N/A"
 
+# Initialize Session State Messages
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "system", "content": "You are 'PitchAI', an expert football virtual assistant."},
+        {"role": "assistant", "content": f"Welcome! I am PitchAI, tuned into {selected_league_name}. Ask me anything!"}
+    ]
+
 # ----------------------------------------------------
 # 5. Main Layout with Tabs
 # ----------------------------------------------------
 st.title("⚽ PitchAI Virtual Assistant")
 
-tab1, tab2 = st.tabs(["💬 PitchAI Chat", "📅 Match Center & Telemetry"])
+tab1, tab2 = st.tabs(["💬 PitchAI Chat", "📊 Match Center & Telemetry"])
 
 # --- TAB 1: Chatbot Interface ---
 with tab1:
     st.caption(f"Currently tracking: {selected_league_name}")
     
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "system", "content": "You are 'PitchAI', an expert football virtual assistant."},
-            {"role": "assistant", "content": f"Welcome! I am PitchAI, tuned into {selected_league_name}. Ask me anything!"}
-        ]
-
+    # Display Chat History inside Tab 1
     for msg in st.session_state.messages:
         if msg["role"] != "system":
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    chat_input = st.chat_input("Ask PitchAI about matches, lineups, or stats...")
-    if chat_input:
-        st.session_state.messages.append({"role": "user", "content": chat_input})
-        with st.chat_message("user"):
-            st.markdown(chat_input)
-
-        with st.chat_message("assistant"):
-            with st.spinner("Analyzing..."):
-                try:
-                    completion = groq_client.chat.completions.create(
-                        model=SELECTED_MODEL,
-                        messages=st.session_state.messages,
-                        temperature=0.7,
-                    )
-                    response = completion.choices[0].message.content
-                    st.markdown(response)
-                    play_audio(response)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-                except Exception as e:
-                    st.error(f"Error: {e}")
-
-# --- TAB 2: Match Center & Detailed Telemetry ---
+# --- TAB 2: Match Center & Telemetry ---
 with tab2:
     st.header(f"📊 {selected_league_name} Match Center")
     
@@ -242,13 +220,11 @@ with tab2:
         h_score = ft_score.get("home", 0) if ft_score.get("home") is not None else 0
         a_score = ft_score.get("away", 0) if ft_score.get("away") is not None else 0
         
-        # Get League Standings Positions
         home_pos, home_pts = get_team_league_position(standings_data, home_team["id"])
         away_pos, away_pts = get_team_league_position(standings_data, away_team["id"])
         
         st.markdown("---")
         
-        # Scorecard Display
         col_h, col_vs, col_a = st.columns([3, 1, 3])
         with col_h:
             st.subheader(home_team["name"])
@@ -262,7 +238,6 @@ with tab2:
             
         st.markdown("---")
         
-        # Match Timeline & Goal Scorers
         st.subheader("⏱️ Match Status & Goal Timeline")
         st.write(f"• **Match Status:** {selected_match.get('status', 'FINISHED')}")
         
@@ -282,7 +257,6 @@ with tab2:
         else:
             st.info("Goal scorer minute timeline is not indexed for this specific match feed.")
 
-        # Lineups Section (Smart AI Tactical Generation inside a spinner)
         st.markdown("---")
         st.subheader("📋 Starting Lineups & Squads")
         
@@ -316,6 +290,24 @@ with tab2:
                     st.warning("Lineup telemetry unavailable.")
     else:
         st.info("Could not load finished matches for this league.")
-       # Get League Standings Positions
-        home_pos, home_pts = get_team_league_position(standings_data, home_team["id"])
-        away_pos, away_pts = get_team_league_position(standings_data, away_team["id"])
+
+# ----------------------------------------------------
+# 6. Global Fixed Bottom Chat Input (Outside All Tabs)
+# ----------------------------------------------------
+user_query = st.chat_input("Ask PitchAI about matches, lineups, or stats...")
+
+if user_query:
+    st.session_state.messages.append({"role": "user", "content": user_query})
+    
+    with st.spinner("Analyzing match data & generating voice commentary..."):
+        try:
+            completion = groq_client.chat.completions.create(
+                model=SELECTED_MODEL,
+                messages=st.session_state.messages,
+                temperature=0.7,
+            )
+            response = completion.choices[0].message.content
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
