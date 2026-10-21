@@ -10,7 +10,7 @@ import datetime
 # 1. Page Configuration & Custom Football Theme (CSS)
 # ----------------------------------------------------
 st.set_page_config(
-    page_title="PitchAI - Football & World Cup Hub",
+    page_title="PitchAI - Football & Live Match Hub",
     page_icon="⚽",
     layout="wide"
 )
@@ -132,7 +132,7 @@ def play_audio(text):
         st.error(f"Audio notice: {e}")
 
 # ----------------------------------------------------
-# 4. Sidebar: Multi-League & FIFA World Cup Hub
+# 4. Live API Helper Functions
 # ----------------------------------------------------
 LEAGUES = {
     "FIFA World Cup 🏆": "WC",
@@ -146,6 +146,21 @@ LEAGUES = {
 st.sidebar.title("🏆 Football & World Cup Hub")
 selected_league_name = st.sidebar.selectbox("Select Competition", list(LEAGUES.keys()))
 league_code = LEAGUES[selected_league_name]
+
+def fetch_live_matches(code=None):
+    if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
+        return None
+    url = "https://api.football-data.org/v4/matches?status=IN_PLAY"
+    if code and code != "WC":
+        url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=IN_PLAY"
+    headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+    except Exception:
+        pass
+    return None
 
 def fetch_standings(code):
     if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
@@ -173,16 +188,24 @@ def fetch_upcoming_matches(code):
         pass
     return None
 
-if selected_league_name == "FIFA World Cup 🏆":
-    st.sidebar.markdown("### 🥇 2026 World Cup Final")
-    st.sidebar.info("🏆 **Champions:** Spain 🇪🇸 (1–0 vs Argentina in ET)\n\n⚽ **Winner Goal:** Ferran Torres (106')")
+# Sidebar Live Ticker
+with st.sidebar:
+    st.markdown("### 🔴 Live Matches & Status")
+    live_data = fetch_live_matches(league_code if selected_league_name != "FIFA World Cup 🏆" else None)
     
-    st.sidebar.markdown("### 📜 World Cup Roll of Honor")
-    st.sidebar.write("• **2026:** Spain 🇪🇸")
-    st.sidebar.write("• **2022:** Argentina 🇦🇷")
-    st.sidebar.write("• **2018:** France 🇫🇷")
-    st.sidebar.write("• **2014:** Germany 🇩🇪")
-    st.sidebar.write("• **2010:** Spain 🇪🇸")
+    if live_data and "matches" in live_data and len(live_data["matches"]) > 0:
+        for match in live_data["matches"][:3]:
+            home = match["homeTeam"]["name"]
+            away = match["awayTeam"]["name"]
+            score_home = match["score"]["fullTime"]["home"] or match["score"]["halfTime"]["home"] or 0
+            score_away = match["score"]["fullTime"]["away"] or match["score"]["halfTime"]["away"] or 0
+            st.success(f"⚽ **{home}** {score_home} - {score_away} **{away}** (LIVE)")
+    else:
+        st.info("No active live matches in play right now.")
+
+if selected_league_name == "FIFA World Cup 🏆":
+    st.sidebar.markdown("### 🥇 World Cup Final")
+    st.sidebar.info("🏆 **Champions:** Spain 🇪🇸 (1–0 vs Argentina in ET)\n\n⚽ **Winner Goal:** Ferran Torres (106')")
 else:
     if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
         st.sidebar.warning("⚠️ Add `FOOTBALL_DATA_API_KEY` to Streamlit Secrets for live standings.")
@@ -190,7 +213,6 @@ else:
         with st.sidebar:
             st.subheader(f"📊 {selected_league_name} Standings")
             standings_data = fetch_standings(league_code)
-            
             if standings_data and "standings" in standings_data:
                 table_type = 0
                 if "table" in standings_data["standings"][table_type]:
@@ -200,19 +222,7 @@ else:
             else:
                 st.info("Standings currently unavailable.")
 
-            st.markdown("---")
-            st.subheader("📅 Upcoming Fixtures")
-            matches_data = fetch_upcoming_matches(league_code)
-            if matches_data and "matches" in matches_data:
-                upcoming = matches_data["matches"][:3]
-                for match in upcoming:
-                    home = match["homeTeam"]["name"]
-                    away = match["awayTeam"]["name"]
-                    st.write(f"⚽ **{home}** vs **{away}**")
-            else:
-                st.info("No upcoming scheduled fixtures found.")
-
-# Chat Export
+# Export Section
 st.sidebar.markdown("---")
 st.sidebar.subheader("💾 Export Chat Log")
 
@@ -222,15 +232,14 @@ if "messages" not in st.session_state:
             "role": "system",
             "content": (
                 "You are 'PitchAI', an expert football virtual assistant. "
-                "You possess knowledge of football tactics, player stats, historical records, and tournament outcomes. "
-                "Keep in mind that Spain won the 2026 FIFA World Cup, defeating Argentina 1-0 in the final after extra time, "
-                "with Ferran Torres scoring the winning goal in the 106th minute. Argentina won in 2022. "
+                "You possess knowledge of football tactics, player stats, historical records, real-time results, and tournament outcomes. "
+                "Keep in mind that Spain won the 2026 FIFA World Cup, defeating Argentina 1-0 in the final after extra time. "
                 "Maintain an enthusiastic, accurate, and concise tone."
             )
         },
         {
             "role": "assistant",
-            "content": f"Welcome! I am PitchAI, tuned into {selected_league_name}. Ask me about World Cup records, player stats, or match tactics!"
+            "content": f"Welcome! I am PitchAI, tuned into {selected_league_name}. Ask me about live match status, player stats, or tactics!"
         }
     ]
 
@@ -251,16 +260,16 @@ st.sidebar.download_button(
 # 5. Main Dashboard & Tactical Shortcuts
 # ----------------------------------------------------
 st.title("⚽ PitchAI Virtual Assistant")
-st.caption(f"Tracking: {selected_league_name} & World Football Telemetry")
+st.caption(f"Tracking: {selected_league_name} & Live Football Telemetry")
 
-st.markdown("### ⚡ Quick Insights & Player Intelligence")
+st.markdown("### ⚡ Quick Insights & Live Match Actions")
 col1, col2, col3 = st.columns(3)
 
 prompt_to_send = None
 
 with col1:
-    if st.button("🏆 2026 World Cup Recap"):
-        prompt_to_send = "Can you summarize the 2026 FIFA World Cup final match between Spain and Argentina, including key goals and moments?"
+    if st.button("🔴 Live Score Check"):
+        prompt_to_send = f"Give me an overview of live scores and match statuses in the {selected_league_name} right now."
 with col2:
     if st.button("📊 Custom Player Analytics"):
         prompt_to_send = "Provide a comprehensive career and stat breakdown comparing Kylian Mbappé, Erling Haaland, and Lamine Yamal."
@@ -276,7 +285,7 @@ for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-chat_input = st.chat_input("Ask PitchAI about matches, player stats, or World Cup history...")
+chat_input = st.chat_input("Ask PitchAI about live scores, player stats, or match history...")
 user_query = chat_input if chat_input else prompt_to_send
 
 if user_query:
@@ -285,7 +294,7 @@ if user_query:
         st.markdown(user_query)
 
     with st.chat_message("assistant"):
-        with st.spinner("Analyzing match data & generating voice commentary..."):
+        with st.spinner("Fetching telemetry & generating voice commentary..."):
             try:
                 completion = groq_client.chat.completions.create(
                     model=SELECTED_MODEL,
