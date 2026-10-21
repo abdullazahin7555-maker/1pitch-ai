@@ -249,17 +249,54 @@ with tab2:
         
         st.markdown("---")
         
-        # Scorecard Display
-        col_h, col_vs, col_a = st.columns([3, 1, 3])
-        with col_h:
-            st.subheader(home_team["name"])
-            st.write(f"League Position: **#{home_pos}** ({home_pts} pts)")
-        with col_vs:
-            st.markdown(f"### `{h_score} - {a_score}`")
-            st.caption("FULL TIME")
-        with col_a:
-            st.subheader(away_team["name"])
-            st.write(f"League Position: **#{away_pos}** ({away_pts} pts)")
+        # Match Timeline & Goal Scorers
+        st.subheader("⏱️ Match Status & Goal Timeline")
+        st.write(f"• **Match Status:** {selected_match.get('status', 'FINISHED')}")
+        
+        half_time = selected_match.get('score', {}).get('halfTime', {})
+        ht_home = half_time.get('home', 0) if half_time and half_time.get('home') is not None else 0
+        ht_away = half_time.get('away', 0) if half_time and half_time.get('away') is not None else 0
+        st.write(f"• **Half-Time Score:** {ht_home} - {ht_away}")
+        
+        # Goals parser safely checking multiple data formats
+        goals = selected_match.get("goals", [])
+        if goals:
+            st.markdown("#### ⚽ Goal Scorers")
+            for goal in goals:
+                scorer = goal.get("scorer", {}).get("name", "Unknown Player")
+                minute = goal.get("minute", "?")
+                team_info = goal.get("team", {}).get("name", "")
+                st.write(f"• **{minute}'** — {scorer} ({team_info})")
+        else:
+            st.info("Goal scorer minute timeline is not indexed for this specific match feed.")
+
+        # Lineups Section
+        st.markdown("---")
+        st.subheader("📋 Starting Lineups & Squads")
+        
+        home_lineup = selected_match.get("homeTeam", {}).get("lineup", [])
+        away_lineup = selected_match.get("awayTeam", {}).get("lineup", [])
+        
+        col_l1, col_l2 = st.columns(2)
+        with col_l1:
+            st.write(f"**{home_team['name']}**")
+            if home_lineup:
+                for player in home_lineup:
+                    p_name = player.get('name', 'Player')
+                    p_num = player.get('shirtNumber', '-')
+                    st.text(f"• #{p_num} {p_name}")
+            else:
+                st.info("Lineups restricted on current API tier.")
+                
+        with col_l2:
+            st.write(f"**{away_team['name']}**")
+            if away_lineup:
+                for player in away_lineup:
+                    p_name = player.get('name', 'Player')
+                    p_num = player.get('shirtNumber', '-')
+                    st.text(f"• #{p_num} {p_name}")
+            else:
+                st.info("Lineups restricted on current API tier.")
         
        # Get League Standings Positions
         home_pos, home_pts = get_team_league_position(standings_data, home_team["id"])
