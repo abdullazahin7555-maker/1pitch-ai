@@ -227,6 +227,6 @@ with tab2:
         away_team = selected_match["awayTeam"]
         score = selected_match["score"]
         
-        # Get League Standings Positions
+       # Get League Standings Positions
         home_pos, home_pts = get_team_league_position(standings_data, home_team["id"])
-        away_pos, away_pts = get_team
+        away_pos, away_pts = get_team_league_position(standings_data, away_team["id"])
