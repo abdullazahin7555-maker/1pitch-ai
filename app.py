@@ -242,7 +242,6 @@ with tab2:
     st.header(f"📊 {selected_league_name} Match Center")
     
     finished_matches = fetch_finished_matches(league_code)
-    standings_data = fetch_standings(league_code)
     
     if finished_matches:
         match_options = {}
@@ -260,54 +259,78 @@ with tab2:
         selected_match_label = st.selectbox("Select a Recent Match to View Detailed Telemetry", list(match_options.keys()))
         selected_match = match_options[selected_match_label]
         
-        home_team = selected_match["homeTeam"]
-        away_team = selected_match["awayTeam"]
+        home_team = selected_match.get("homeTeam", {})
+        away_team = selected_match.get("awayTeam", {})
+        score = selected_match.get("score", {}).get("fullTime", {})
+        h_score = score.get("home", 0) if score and score.get("home") is not None else 0
+        a_score = score.get("away", 0) if score and score.get("away") is not None else 0
         
         st.markdown("---")
         
+        # --- 1. GOAL SCORERS SECTION ---
+        st.subheader("⚽ Match Timeline & Goals")
         goals = selected_match.get("goals", [])
-        if goals:
-            st.markdown("#### ⚽ Goal Scorers")
+        
+        if h_score == 0 and a_score == 0:
+            st.info("🤝 Match ended in a 0 - 0 draw. No goals were scored.")
+        elif goals:
             for goal in goals:
-                scorer = goal.get("scorer", {}).get("name", "Unknown Player")
+                scorer = goal.get("scorer", {}).get("name", "Goal Scorer")
                 minute = goal.get("minute", "?")
                 team_info = goal.get("team", {}).get("name", "")
-                st.write(f"• **{minute}'** — {scorer} ({team_info})")
+                st.write(f"• **{minute}'** ⚽ {scorer} ({team_info})")
         else:
-            st.info("Goal scorer minute timeline is not indexed for this specific match feed.")
+            # Smart AI Fallback for Goals when API data is omitted
+            with st.spinner("🤖 PitchAI Telemetry: Retrieving goal scorers..."):
+                goal_prompt = f"Provide a brief list of the goal scorers with approximate goal minutes for the match: {home_team.get('name')} {h_score} - {a_score} {away_team.get('name')}. Keep it short using bullet points."
+                try:
+                    goal_res = groq_client.chat.completions.create(
+                        model=SELECTED_MODEL,
+                        messages=[
+                            {"role": "system", "content": "You are PitchAI. List match goal scorers concisely based on official match results."},
+                            {"role": "user", "content": goal_prompt}
+                        ],
+                        temperature=0.2,
+                    )
+                    st.markdown(goal_res.choices[0].message.content)
+                except Exception:
+                    st.info(f"Match ended {h_score} - {a_score}.")
 
+        # --- 2. STARTING LINEUPS SECTION ---
         st.markdown("---")
         st.subheader("📋 Starting Lineups & Squads")
         
-        home_lineup = selected_match.get("homeTeam", {}).get("lineup", [])
-        away_lineup = selected_match.get("awayTeam", {}).get("lineup", [])
-        
-        col_l1, col_l2 = st.columns(2)
+        home_lineup = home_team.get("lineup", [])
+        away_lineup = away_team.get("lineup", [])
         
         if home_lineup and away_lineup:
+            col_l1, col_l2 = st.columns(2)
             with col_l1:
-                st.write(f"**{home_team['name']}**")
+                st.write(f"**{home_team.get('name')}**")
                 for player in home_lineup:
                     st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
             with col_l2:
-                st.write(f"**{away_team['name']}**")
+                st.write(f"**{away_team.get('name')}**")
                 for player in away_lineup:
                     st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
         else:
-            st.info("💡 Generating tactical starting XI using PitchAI Telemetry...")
-            lineup_prompt = f"Provide the likely starting 11 lineup and formation for a match between {home_team['name']} and {away_team['name']}. Format as two clean bulleted lists."
-            try:
-                lineup_res = groq_client.chat.completions.create(
-                    model=SELECTED_MODEL,
-                    messages=[
-                        {"role": "system", "content": "You are PitchAI. Give direct, concise football starting 11 lineups without introductory fluff."},
-                        {"role": "user", "content": lineup_prompt}
-                    ],
-                    temperature=0.3,
-                )
-                st.markdown(lineup_res.choices[0].message.content)
-            except Exception:
-                st.warning("Lineup telemetry unavailable.")
+            # Smart AI Fallback for Lineups
+            with st.spinner("🤖 PitchAI Telemetry: Generating tactical starting XI..."):
+                lineup_prompt = f"Provide the official or expected starting 11 lineup and formation for {home_team.get('name')} vs {away_team.get('name')}. Show two clean bullet lists for Home and Away."
+                try:
+                    lineup_res = groq_client.chat.completions.create(
+                        model=SELECTED_MODEL,
+                        messages=[
+                            {"role": "system", "content": "You are PitchAI. Give direct, clean football starting XI lineups without intro text."},
+                            {"role": "user", "content": lineup_prompt}
+                        ],
+                        temperature=0.3,
+                    )
+                    st.markdown(lineup_res.choices[0].message.content)
+                except Exception:
+                    st.warning("Lineup telemetry generator is temporarily offline.")
+    else:
+        st.warning("No finished matches found for this league.")
 
 # --- TAB 3: Live League Standings ---
 with tab3:
