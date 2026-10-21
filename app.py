@@ -114,7 +114,7 @@ def play_audio(text):
         st.error(f"Audio notice: {e}")
 
 # ----------------------------------------------------
-# 4. API Functions for Matches
+# 4. API Functions for Match Data & Standings
 # ----------------------------------------------------
 LEAGUES = {
     "Premier League": "PL",
@@ -130,7 +130,7 @@ league_code = LEAGUES[selected_league_name]
 
 def fetch_finished_matches(code):
     if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
-        return None
+        return []
     url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=FINISHED"
     headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
     try:
@@ -139,50 +139,48 @@ def fetch_finished_matches(code):
             return res.json().get("matches", [])
     except Exception:
         pass
-    return None
+    return []
 
-def fetch_upcoming_matches(code):
+def fetch_standings(code):
     if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
         return None
-    url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=SCHEDULED"
+    url = f"https://api.football-data.org/v4/competitions/{code}/standings"
     headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
     try:
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
-            return res.json().get("matches", [])
+            return res.json()
     except Exception:
         pass
     return None
 
+def get_team_league_position(standings_json, team_id):
+    if not standings_json or "standings" not in standings_json:
+        return "N/A", "N/A"
+    try:
+        table = standings_json["standings"][0]["table"]
+        for row in table:
+            if row["team"]["id"] == team_id:
+                return row.get("position", "-"), row.get("points", "-")
+    except Exception:
+        pass
+    return "N/A", "N/A"
+
 # ----------------------------------------------------
-# 5. Main Layout with Tabs (Pages)
+# 5. Main Layout with Tabs
 # ----------------------------------------------------
 st.title("⚽ PitchAI Virtual Assistant")
 
-tab1, tab2 = st.tabs(["💬 PitchAI Chat", "📅 Matches & Results"])
+tab1, tab2 = st.tabs(["💬 PitchAI Chat", "📅 Match Center & Telemetry"])
 
 # --- TAB 1: Chatbot Interface ---
 with tab1:
     st.caption(f"Currently tracking: {selected_league_name}")
     
-    st.markdown("### ⚡ Quick Prompts")
-    col1, col2, col3 = st.columns(3)
-    prompt_to_send = None
-
-    with col1:
-        if st.button("🏆 Recent Match Recap"):
-            prompt_to_send = f"Give me a quick recap of recent results in the {selected_league_name}."
-    with col2:
-        if st.button("📊 Top Players Comparison"):
-            prompt_to_send = "Compare the current form of Haaland, Mbappé, and Yamal."
-    with col3:
-        if st.button("🧠 Tactical Analysis"):
-            prompt_to_send = f"Analyze the tactical trends in the {selected_league_name} this season."
-
     if "messages" not in st.session_state:
         st.session_state.messages = [
             {"role": "system", "content": "You are 'PitchAI', an expert football virtual assistant."},
-            {"role": "assistant", "content": f"Welcome! I am PitchAI, tuned into {selected_league_name}. How can I help?"}
+            {"role": "assistant", "content": f"Welcome! I am PitchAI, tuned into {selected_league_name}. Ask me anything!"}
         ]
 
     for msg in st.session_state.messages:
@@ -190,13 +188,11 @@ with tab1:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    chat_input = st.chat_input("Ask PitchAI anything about football...")
-    user_query = chat_input if chat_input else prompt_to_send
-
-    if user_query:
-        st.session_state.messages.append({"role": "user", "content": user_query})
+    chat_input = st.chat_input("Ask PitchAI about matches, lineups, or stats...")
+    if chat_input:
+        st.session_state.messages.append({"role": "user", "content": chat_input})
         with st.chat_message("user"):
-            st.markdown(user_query)
+            st.markdown(chat_input)
 
         with st.chat_message("assistant"):
             with st.spinner("Analyzing..."):
@@ -213,39 +209,24 @@ with tab1:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-# --- TAB 2: Previous & Upcoming Matches Page ---
+# --- TAB 2: Match Center & Detailed Telemetry ---
 with tab2:
-    st.header(f"📊 {selected_league_name} Fixtures Center")
+    st.header(f"📊 {selected_league_name} Match Center")
     
-    col_prev, col_next = st.columns(2)
+    finished_matches = fetch_finished_matches(league_code)
+    standings_data = fetch_standings(league_code)
     
-    with col_prev:
-        st.subheader("⏮️ Recent Results")
-        finished_matches = fetch_finished_matches(league_code)
-        if finished_matches:
-            # Show last 5 finished matches
-            recent = finished_matches[-5:]
-            recent.reverse()
-            for m in recent:
-                home = m["homeTeam"]["name"]
-                away = m["awayTeam"]["name"]
-                score_h = m["score"]["fullTime"]["home"]
-                score_a = m["score"]["fullTime"]["away"]
-                date_str = m["utcDate"][:10]
-                st.success(f"**{home}** `{score_h} - {score_a}` **{away}**  \n*Date: {date_str}*")
-        else:
-            st.info("No recent results available or API key missing.")
-
-    with col_next:
-        st.subheader("⏭️ Upcoming Fixtures")
-        upcoming_matches = fetch_upcoming_matches(league_code)
-        if upcoming_matches:
-            # Show next 5 upcoming matches
-            next_five = upcoming_matches[:5]
-            for m in next_five:
-                home = m["homeTeam"]["name"]
-                away = m["awayTeam"]["name"]
-                date_str = m["utcDate"][:10]
-                st.info(f"⚽ **{home}** vs **{away}**  \n*Scheduled: {date_str}*")
-        else:
-            st.info("No upcoming matches scheduled or API key missing.")
+    if finished_matches:
+        # Create match selection dropdown based on recent finished games
+        match_options = {f"{m['homeTeam']['name']} {m['score']['fullTime']['home']} - {m['score']['fullTime']['away']} {m['awayTeam']['name']} ({m['utcDate'][:10]})": m for m in finished_matches[-15:]}
+        
+        selected_match_label = st.selectbox("Select a Recent Match to View Detailed Telemetry", list(match_options.keys()))
+        selected_match = match_options[selected_match_label]
+        
+        home_team = selected_match["homeTeam"]
+        away_team = selected_match["awayTeam"]
+        score = selected_match["score"]
+        
+        # Get League Standings Positions
+        home_pos, home_pts = get_team_league_position(standings_data, home_team["id"])
+        away_pos, away_pts = get_team
