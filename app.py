@@ -129,7 +129,8 @@ selected_league_name = st.sidebar.selectbox("Select Competition", list(LEAGUES.k
 league_code = LEAGUES[selected_league_name]
 
 def fetch_finished_matches(code):
-    if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
+    if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE" or not FOOTBALL_DATA_API_KEY:
+        st.warning("⚠️ FOOTBALL_DATA_API_KEY is missing in Streamlit Secrets. Please add it to view match telemetry.")
         return []
     url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=FINISHED"
     headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
@@ -137,8 +138,10 @@ def fetch_finished_matches(code):
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             return res.json().get("matches", [])
-    except Exception:
-        pass
+        else:
+            st.error(f"API Error Code: {res.status_code}")
+    except Exception as e:
+        st.error(f"Connection Error: {e}")
     return []
 
 def fetch_standings(code):
