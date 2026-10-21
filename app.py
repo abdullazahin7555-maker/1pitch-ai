@@ -256,8 +256,8 @@ with col2:
     if st.button("🧠 Tactical Breakdown"):
         prompt_to_send = f"Can you analyze the current title race and tactics in the {selected_league_name}?"
 with col3:
-    if st.button("👑 GOAT Debate"):
-        prompt_to_send = "Compare the prime career statistics and playing styles of Messi, Pelé, and Maradona."
+    if st.button("🌍 World Cup Legends"):
+        prompt_to_send = "What are some of the most iconic moments and greatest matches in FIFA World Cup history?"
 
 # ----------------------------------------------------
 # 6. Chat Logic
