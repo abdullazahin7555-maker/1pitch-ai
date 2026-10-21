@@ -220,15 +220,46 @@ with tab2:
     standings_data = fetch_standings(league_code)
     
     if finished_matches:
-        # Create match selection dropdown based on recent finished games
-        match_options = {f"{m['homeTeam']['name']} {m['score']['fullTime']['home']} - {m['score']['fullTime']['away']} {m['awayTeam']['name']} ({m['utcDate'][:10]})": m for m in finished_matches[-15:]}
+       # Create match selection dropdown safely
+        match_options = {}
+        for m in finished_matches[-15:]:
+            home_name = m.get('homeTeam', {}).get('name', 'Home')
+            away_name = m.get('awayTeam', {}).get('name', 'Away')
+            score_dict = m.get('score', {}).get('fullTime', {})
+            home_score = score_dict.get('home', 0) if score_dict and score_dict.get('home') is not None else 0
+            away_score = score_dict.get('away', 0) if score_dict and score_dict.get('away') is not None else 0
+            date_str = m.get('utcDate', '')[:10]
+            
+            label = f"{home_name} {home_score} - {away_score} {away_name} ({date_str})"
+            match_options[label] = m
         
         selected_match_label = st.selectbox("Select a Recent Match to View Detailed Telemetry", list(match_options.keys()))
         selected_match = match_options[selected_match_label]
         
         home_team = selected_match["homeTeam"]
         away_team = selected_match["awayTeam"]
-        score = selected_match["score"]
+        score = selected_match.get("score", {})
+        ft_score = score.get("fullTime", {})
+        h_score = ft_score.get("home", 0) if ft_score.get("home") is not None else 0
+        a_score = ft_score.get("away", 0) if ft_score.get("away") is not None else 0
+        
+        # Get League Standings Positions
+        home_pos, home_pts = get_team_league_position(standings_data, home_team["id"])
+        away_pos, away_pts = get_team_league_position(standings_data, away_team["id"])
+        
+        st.markdown("---")
+        
+        # Scorecard Display
+        col_h, col_vs, col_a = st.columns([3, 1, 3])
+        with col_h:
+            st.subheader(home_team["name"])
+            st.write(f"League Position: **#{home_pos}** ({home_pts} pts)")
+        with col_vs:
+            st.markdown(f"### `{h_score} - {a_score}`")
+            st.caption("FULL TIME")
+        with col_a:
+            st.subheader(away_team["name"])
+            st.write(f"League Position: **#{away_pos}** ({away_pts} pts)")
         
        # Get League Standings Positions
         home_pos, home_pts = get_team_league_position(standings_data, home_team["id"])
