@@ -7,10 +7,10 @@ import base64
 import datetime
 
 # ----------------------------------------------------
-# 1. Page Configuration & Custom Football Theme (CSS)
+# 1. Page Configuration & Custom CSS
 # ----------------------------------------------------
 st.set_page_config(
-    page_title="PitchAI - Football & Live Match Hub",
+    page_title="PitchAI - Football Assistant",
     page_icon="⚽",
     layout="wide"
 )
@@ -58,23 +58,12 @@ st.markdown("""
         border-radius: 14px;
         padding: 12px;
         margin-bottom: 12px;
-        backdrop-filter: blur(6px);
     }
     div[data-testid="stChatInput"] input {
         background-color: #020f09 !important;
         color: #ffffff !important;
         border: 1px solid #10b981 !important;
         border-radius: 10px !important;
-    }
-    ::-webkit-scrollbar {
-        width: 8px;
-    }
-    ::-webkit-scrollbar-track {
-        background: #020d08;
-    }
-    ::-webkit-scrollbar-thumb {
-        background: #059669;
-        border-radius: 4px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -92,12 +81,7 @@ def get_working_model():
     try:
         models_data = groq_client.models.list()
         available = [m.id for m in models_data.data]
-        preferred = [
-            "llama-3.3-70b-versatile",
-            "openai/gpt-oss-20b",
-            "llama-3.1-8b-instant",
-            "qwen/qwen3.8-27b"
-        ]
+        preferred = ["llama-3.3-70b-versatile", "openai/gpt-oss-20b", "llama-3.1-8b-instant"]
         for pref in preferred:
             if pref in available:
                 return pref
@@ -118,10 +102,8 @@ def play_audio(text):
         tts = gTTS(text=text, lang='en')
         tts.write_to_fp(fp)
         fp.seek(0)
-        
         audio_bytes = fp.read()
         b64_audio = base64.b64encode(audio_bytes).decode()
-        
         md = f"""
             <audio controls autoplay style="width: 100%; margin-top: 10px; filter: invert(0.8);">
                 <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mp3">
@@ -132,10 +114,9 @@ def play_audio(text):
         st.error(f"Audio notice: {e}")
 
 # ----------------------------------------------------
-# 4. Live API Helper Functions
+# 4. API Functions for Matches
 # ----------------------------------------------------
 LEAGUES = {
-    "FIFA World Cup 🏆": "WC",
     "Premier League": "PL",
     "La Liga": "PD",
     "Champions League": "CL",
@@ -143,34 +124,19 @@ LEAGUES = {
     "Bundesliga": "BL1"
 }
 
-st.sidebar.title("🏆 Football & World Cup Hub")
+st.sidebar.title("🏆 Football Hub")
 selected_league_name = st.sidebar.selectbox("Select Competition", list(LEAGUES.keys()))
 league_code = LEAGUES[selected_league_name]
 
-def fetch_live_matches(code=None):
+def fetch_finished_matches(code):
     if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
         return None
-    url = "https://api.football-data.org/v4/matches?status=IN_PLAY"
-    if code and code != "WC":
-        url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=IN_PLAY"
+    url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=FINISHED"
     headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
     try:
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            return response.json()
-    except Exception:
-        pass
-    return None
-
-def fetch_standings(code):
-    if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
-        return None
-    url = f"https://api.football-data.org/v4/competitions/{code}/standings"
-    headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
-    try:
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            return response.json()
+        res = requests.get(url, headers=headers)
+        if res.status_code == 200:
+            return res.json().get("matches", [])
     except Exception:
         pass
     return None
@@ -181,131 +147,105 @@ def fetch_upcoming_matches(code):
     url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=SCHEDULED"
     headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
     try:
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            return response.json()
+        res = requests.get(url, headers=headers)
+        if res.status_code == 200:
+            return res.json().get("matches", [])
     except Exception:
         pass
     return None
 
-# Sidebar Live Ticker
-with st.sidebar:
-    st.markdown("### 🔴 Live Matches & Status")
-    live_data = fetch_live_matches(league_code if selected_league_name != "FIFA World Cup 🏆" else None)
-    
-    if live_data and "matches" in live_data and len(live_data["matches"]) > 0:
-        for match in live_data["matches"][:3]:
-            home = match["homeTeam"]["name"]
-            away = match["awayTeam"]["name"]
-            score_home = match["score"]["fullTime"]["home"] or match["score"]["halfTime"]["home"] or 0
-            score_away = match["score"]["fullTime"]["away"] or match["score"]["halfTime"]["away"] or 0
-            st.success(f"⚽ **{home}** {score_home} - {score_away} **{away}** (LIVE)")
-    else:
-        st.info("No active live matches in play right now.")
-
-if selected_league_name == "FIFA World Cup 🏆":
-    st.sidebar.markdown("### 🥇 World Cup Final")
-    st.sidebar.info("🏆 **Champions:** Spain 🇪🇸 (1–0 vs Argentina in ET)\n\n⚽ **Winner Goal:** Ferran Torres (106')")
-else:
-    if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
-        st.sidebar.warning("⚠️ Add `FOOTBALL_DATA_API_KEY` to Streamlit Secrets for live standings.")
-    else:
-        with st.sidebar:
-            st.subheader(f"📊 {selected_league_name} Standings")
-            standings_data = fetch_standings(league_code)
-            if standings_data and "standings" in standings_data:
-                table_type = 0
-                if "table" in standings_data["standings"][table_type]:
-                    table = standings_data["standings"][table_type]["table"][:5]
-                    for team in table:
-                        st.write(f"**{team.get('position', '-')}. {team['team']['name']}** - {team.get('points', 0)} pts")
-            else:
-                st.info("Standings currently unavailable.")
-
-# Export Section
-st.sidebar.markdown("---")
-st.sidebar.subheader("💾 Export Chat Log")
-
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are 'PitchAI', an expert football virtual assistant. "
-                "You possess knowledge of football tactics, player stats, historical records, real-time results, and tournament outcomes. "
-                "Keep in mind that Spain won the 2026 FIFA World Cup, defeating Argentina 1-0 in the final after extra time. "
-                "Maintain an enthusiastic, accurate, and concise tone."
-            )
-        },
-        {
-            "role": "assistant",
-            "content": f"Welcome! I am PitchAI, tuned into {selected_league_name}. Ask me about live match status, player stats, or tactics!"
-        }
-    ]
-
-chat_history_text = f"=== PitchAI Chat Log ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}) ===\n\n"
-for msg in st.session_state.messages:
-    if msg["role"] != "system":
-        sender = "PitchAI" if msg["role"] == "assistant" else "You"
-        chat_history_text += f"[{sender}]: {msg['content']}\n\n"
-
-st.sidebar.download_button(
-    label="📥 Download Log (.txt)",
-    data=chat_history_text,
-    file_name=f"PitchAI_Chat_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-    mime="text/plain"
-)
-
 # ----------------------------------------------------
-# 5. Main Dashboard & Tactical Shortcuts
+# 5. Main Layout with Tabs (Pages)
 # ----------------------------------------------------
 st.title("⚽ PitchAI Virtual Assistant")
-st.caption(f"Tracking: {selected_league_name} & Live Football Telemetry")
 
-st.markdown("### ⚡ Quick Insights & Live Match Actions")
-col1, col2, col3 = st.columns(3)
+tab1, tab2 = st.tabs(["💬 PitchAI Chat", "📅 Matches & Results"])
 
-prompt_to_send = None
+# --- TAB 1: Chatbot Interface ---
+with tab1:
+    st.caption(f"Currently tracking: {selected_league_name}")
+    
+    st.markdown("### ⚡ Quick Prompts")
+    col1, col2, col3 = st.columns(3)
+    prompt_to_send = None
 
-with col1:
-    if st.button("🔴 Live Score Check"):
-        prompt_to_send = f"Give me an overview of live scores and match statuses in the {selected_league_name} right now."
-with col2:
-    if st.button("📊 Custom Player Analytics"):
-        prompt_to_send = "Provide a comprehensive career and stat breakdown comparing Kylian Mbappé, Erling Haaland, and Lamine Yamal."
-with col3:
-    if st.button("👑 All-Time GOAT Rankings"):
-        prompt_to_send = "Compare the prime statistics, World Cup achievements, and playing styles of Lionel Messi, Pelé, and Diego Maradona."
+    with col1:
+        if st.button("🏆 Recent Match Recap"):
+            prompt_to_send = f"Give me a quick recap of recent results in the {selected_league_name}."
+    with col2:
+        if st.button("📊 Top Players Comparison"):
+            prompt_to_send = "Compare the current form of Haaland, Mbappé, and Yamal."
+    with col3:
+        if st.button("🧠 Tactical Analysis"):
+            prompt_to_send = f"Analyze the tactical trends in the {selected_league_name} this season."
 
-# ----------------------------------------------------
-# 6. Conversational Interface
-# ----------------------------------------------------
-for msg in st.session_state.messages:
-    if msg["role"] != "system":
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {"role": "system", "content": "You are 'PitchAI', an expert football virtual assistant."},
+            {"role": "assistant", "content": f"Welcome! I am PitchAI, tuned into {selected_league_name}. How can I help?"}
+        ]
 
-chat_input = st.chat_input("Ask PitchAI about live scores, player stats, or match history...")
-user_query = chat_input if chat_input else prompt_to_send
+    for msg in st.session_state.messages:
+        if msg["role"] != "system":
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
 
-if user_query:
-    st.session_state.messages.append({"role": "user", "content": user_query})
-    with st.chat_message("user"):
-        st.markdown(user_query)
+    chat_input = st.chat_input("Ask PitchAI anything about football...")
+    user_query = chat_input if chat_input else prompt_to_send
 
-    with st.chat_message("assistant"):
-        with st.spinner("Fetching telemetry & generating voice commentary..."):
-            try:
-                completion = groq_client.chat.completions.create(
-                    model=SELECTED_MODEL,
-                    messages=st.session_state.messages,
-                    temperature=0.7,
-                )
-                response = completion.choices[0].message.content
-                st.markdown(response)
+    if user_query:
+        st.session_state.messages.append({"role": "user", "content": user_query})
+        with st.chat_message("user"):
+            st.markdown(user_query)
 
-                play_audio(response)
+        with st.chat_message("assistant"):
+            with st.spinner("Analyzing..."):
+                try:
+                    completion = groq_client.chat.completions.create(
+                        model=SELECTED_MODEL,
+                        messages=st.session_state.messages,
+                        temperature=0.7,
+                    )
+                    response = completion.choices[0].message.content
+                    st.markdown(response)
+                    play_audio(response)
+                    st.session_state.messages.append({"role": "assistant", "content": response})
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
-                st.session_state.messages.append({"role": "assistant", "content": response})
-            except Exception as e:
-                st.error(f"Error: {e}")
+# --- TAB 2: Previous & Upcoming Matches Page ---
+with tab2:
+    st.header(f"📊 {selected_league_name} Fixtures Center")
+    
+    col_prev, col_next = st.columns(2)
+    
+    with col_prev:
+        st.subheader("⏮️ Recent Results")
+        finished_matches = fetch_finished_matches(league_code)
+        if finished_matches:
+            # Show last 5 finished matches
+            recent = finished_matches[-5:]
+            recent.reverse()
+            for m in recent:
+                home = m["homeTeam"]["name"]
+                away = m["awayTeam"]["name"]
+                score_h = m["score"]["fullTime"]["home"]
+                score_a = m["score"]["fullTime"]["away"]
+                date_str = m["utcDate"][:10]
+                st.success(f"**{home}** `{score_h} - {score_a}` **{away}**  \n*Date: {date_str}*")
+        else:
+            st.info("No recent results available or API key missing.")
+
+    with col_next:
+        st.subheader("⏭️ Upcoming Fixtures")
+        upcoming_matches = fetch_upcoming_matches(league_code)
+        if upcoming_matches:
+            # Show next 5 upcoming matches
+            next_five = upcoming_matches[:5]
+            for m in next_five:
+                home = m["homeTeam"]["name"]
+                away = m["awayTeam"]["name"]
+                date_str = m["utcDate"][:10]
+                st.info(f"⚽ **{home}** vs **{away}**  \n*Scheduled: {date_str}*")
+        else:
+            st.info("No upcoming matches scheduled or API key missing.")
