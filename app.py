@@ -175,8 +175,7 @@ def get_team_league_position(standings_json, team_id):
 # ----------------------------------------------------
 st.title("⚽ PitchAI Virtual Assistant")
 
-tab1, tab2 = st.tabs(["💬 PitchAI Chat", "📅 Match Center & Telemetry"])
-
+tab1, tab2, tab3 = st.tabs(["💬 PitchAI Chat", "📅 Match Center & Telemetry", "🏆 League Standings"])
 # --- TAB 1: Chatbot Interface ---
 with tab1:
     st.caption(f"Currently tracking: {selected_league_name}")
@@ -304,3 +303,39 @@ with tab2:
                 st.markdown(lineup_res.choices[0].message.content)
             except Exception:
                 st.warning("Lineup telemetry unavailable.")
+                # --- TAB 3: Live League Standings ---
+with tab3:
+    st.header(f"🏆 {selected_league_name} Live Standings")
+    
+    standings_json = fetch_standings(league_code)
+    
+    if standings_json and "standings" in standings_json:
+        try:
+            # football-data.org typically stores the main table in standings[0]['table']
+            table_data = standings_json["standings"][0]["table"]
+            
+            formatted_table = []
+            for row in table_data:
+                formatted_table.append({
+                    "Pos": row.get("position"),
+                    "Team": row.get("team", {}).get("name"),
+                    "P": row.get("playedGames"),
+                    "W": row.get("won"),
+                    "D": row.get("draw"),
+                    "L": row.get("lost"),
+                    "GF": row.get("goalsFor"),
+                    "GA": row.get("goalsAgainst"),
+                    "GD": row.get("goalDifference"),
+                    "Pts": row.get("points")
+                })
+            
+            # Display interactive Streamlit dataframe
+            st.dataframe(
+                formatted_table,
+                use_container_width=True,
+                hide_index=True
+            )
+        except Exception as e:
+            st.error(f"Could not parse standings table: {e}")
+    else:
+        st.warning("⚠️ Standings data unavailable. Make sure your `FOOTBALL_DATA_API_KEY` is configured in Streamlit secrets.")
