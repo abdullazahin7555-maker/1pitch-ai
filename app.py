@@ -187,31 +187,39 @@ with tab1:
             {"role": "assistant", "content": f"Welcome! I am PitchAI, tuned into {selected_league_name}. Ask me anything!"}
         ]
 
-    for msg in st.session_state.messages:
-        if msg["role"] != "system":
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+    # Create a container for the chat history so it scrolls independently
+    chat_container = st.container()
+    
+    with chat_container:
+        for msg in st.session_state.messages:
+            if msg["role"] != "system":
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
 
+    # Chat input stays cleanly at the bottom of the tab view
     chat_input = st.chat_input("Ask PitchAI about matches, lineups, or stats...")
+    
     if chat_input:
         st.session_state.messages.append({"role": "user", "content": chat_input})
-        with st.chat_message("user"):
-            st.markdown(chat_input)
+        with chat_container:
+            with st.chat_message("user"):
+                st.markdown(chat_input)
 
-        with st.chat_message("assistant"):
-            with st.spinner("Analyzing..."):
-                try:
-                    completion = groq_client.chat.completions.create(
-                        model=SELECTED_MODEL,
-                        messages=st.session_state.messages,
-                        temperature=0.7,
-                    )
-                    response = completion.choices[0].message.content
-                    st.markdown(response)
-                    play_audio(response)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-                except Exception as e:
-                    st.error(f"Error: {e}")
+        with chat_container:
+            with st.chat_message("assistant"):
+                with st.spinner("Analyzing..."):
+                    try:
+                        completion = groq_client.chat.completions.create(
+                            model=SELECTED_MODEL,
+                            messages=st.session_state.messages,
+                            temperature=0.7,
+                        )
+                        response = completion.choices[0].message.content
+                        st.markdown(response)
+                        play_audio(response)
+                        st.session_state.messages.append({"role": "assistant", "content": response})
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
 # --- TAB 2: Match Center & Detailed Telemetry ---
 with tab2:
