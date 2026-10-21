@@ -269,4 +269,34 @@ with col3:
         prompt_to_send = "Compare the prime statistics, World Cup achievements, and playing styles of Lionel Messi, Pelé, and Diego Maradona."
 
 # ----------------------------------------------------
-# 6.
+# 6. Conversational Interface
+# ----------------------------------------------------
+for msg in st.session_state.messages:
+    if msg["role"] != "system":
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+chat_input = st.chat_input("Ask PitchAI about matches, player stats, or World Cup history...")
+user_query = chat_input if chat_input else prompt_to_send
+
+if user_query:
+    st.session_state.messages.append({"role": "user", "content": user_query})
+    with st.chat_message("user"):
+        st.markdown(user_query)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Analyzing match data & generating voice commentary..."):
+            try:
+                completion = groq_client.chat.completions.create(
+                    model=SELECTED_MODEL,
+                    messages=st.session_state.messages,
+                    temperature=0.7,
+                )
+                response = completion.choices[0].message.content
+                st.markdown(response)
+
+                play_audio(response)
+
+                st.session_state.messages.append({"role": "assistant", "content": response})
+            except Exception as e:
+                st.error(f"Error: {e}")
