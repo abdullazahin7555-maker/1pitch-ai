@@ -270,7 +270,7 @@ with tab2:
         else:
             st.info("Goal scorer minute timeline is not indexed for this specific match feed.")
 
-        # Lineups Section
+       # Lineups Section
         st.markdown("---")
         st.subheader("📋 Starting Lineups & Squads")
         
@@ -278,25 +278,34 @@ with tab2:
         away_lineup = selected_match.get("awayTeam", {}).get("lineup", [])
         
         col_l1, col_l2 = st.columns(2)
-        with col_l1:
-            st.write(f"**{home_team['name']}**")
-            if home_lineup:
+        
+        if home_lineup and away_lineup:
+            with col_l1:
+                st.write(f"**{home_team['name']}**")
                 for player in home_lineup:
-                    p_name = player.get('name', 'Player')
-                    p_num = player.get('shirtNumber', '-')
-                    st.text(f"• #{p_num} {p_name}")
-            else:
-                st.info("Lineups restricted on current API tier.")
-                
-        with col_l2:
-            st.write(f"**{away_team['name']}**")
-            if away_lineup:
+                    st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
+            with col_l2:
+                st.write(f"**{away_team['name']}**")
                 for player in away_lineup:
-                    p_name = player.get('name', 'Player')
-                    p_num = player.get('shirtNumber', '-')
-                    st.text(f"• #{p_num} {p_name}")
-            else:
-                st.info("Lineups restricted on current API tier.")
+                    st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
+        else:
+            # Smart AI Fallback using Groq
+            st.info("💡 Generating tactical starting XI using PitchAI Telemetry...")
+            
+            lineup_prompt = f"Provide the likely starting 11 lineup and formation for a match between {home_team['name']} and {away_team['name']}. Format as two clean bulleted lists."
+            
+            try:
+                lineup_res = groq_client.chat.completions.create(
+                    model=SELECTED_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are PitchAI. Give direct, concise football starting 11 lineups without introductory fluff."},
+                        {"role": "user", "content": lineup_prompt}
+                    ],
+                    temperature=0.3,
+                )
+                st.markdown(lineup_res.choices[0].message.content)
+            except Exception:
+                st.warning("Lineup telemetry unavailable.")
         
        # Get League Standings Positions
         home_pos, home_pts = get_team_league_position(standings_data, home_team["id"])
