@@ -249,15 +249,41 @@ with tab2:
         
         st.markdown("---")
         
-        # Match Timeline & Goal Scorers
-        st.subheader("⏱️ Match Status & Goal Timeline")
-        st.write(f"• **Match Status:** {selected_match.get('status', 'FINISHED')}")
+       # Lineups Section
+        st.markdown("---")
+        st.subheader("📋 Starting Lineups & Squads")
         
-        half_time = selected_match.get('score', {}).get('halfTime', {})
-        ht_home = half_time.get('home', 0) if half_time and half_time.get('home') is not None else 0
-        ht_away = half_time.get('away', 0) if half_time and half_time.get('away') is not None else 0
-        st.write(f"• **Half-Time Score:** {ht_home} - {ht_away}")
+        home_lineup = selected_match.get("homeTeam", {}).get("lineup", [])
+        away_lineup = selected_match.get("awayTeam", {}).get("lineup", [])
         
+        col_l1, col_l2 = st.columns(2)
+        
+        if home_lineup and away_lineup:
+            with col_l1:
+                st.write(f"**{home_team['name']}**")
+                for player in home_lineup:
+                    st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
+            with col_l2:
+                st.write(f"**{away_team['name']}**")
+                for player in away_lineup:
+                    st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
+        else:
+            st.info("💡 Generating tactical starting XI using PitchAI Telemetry...")
+            
+            lineup_prompt = f"Provide the likely starting 11 lineup and formation for a match between {home_team['name']} and {away_team['name']}. Format as two clean bulleted lists."
+            
+            try:
+                lineup_res = groq_client.chat.completions.create(
+                    model=SELECTED_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are PitchAI. Give direct, concise football starting 11 lineups without introductory fluff."},
+                        {"role": "user", "content": lineup_prompt}
+                    ],
+                    temperature=0.3,
+                )
+                st.markdown(lineup_res.choices[0].message.content)
+            except Exception:
+                st.warning("Lineup telemetry unavailable.")
         # Goals parser safely checking multiple data formats
         goals = selected_match.get("goals", [])
         if goals:
