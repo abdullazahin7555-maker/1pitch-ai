@@ -117,6 +117,7 @@ def play_audio(text):
 # 4. API Functions for Match Data & Standings
 # ----------------------------------------------------
 LEAGUES = {
+    "FIFA World Cup 🏆": "WC",
     "Premier League": "PL",
     "La Liga": "PD",
     "Champions League": "CL",
@@ -220,7 +221,6 @@ with tab2:
     standings_data = fetch_standings(league_code)
     
     if finished_matches:
-       # Create match selection dropdown safely
         match_options = {}
         for m in finished_matches[-15:]:
             home_name = m.get('homeTeam', {}).get('name', 'Home')
@@ -249,41 +249,6 @@ with tab2:
         
         st.markdown("---")
         
-       # Lineups Section
-        st.markdown("---")
-        st.subheader("📋 Starting Lineups & Squads")
-        
-        home_lineup = selected_match.get("homeTeam", {}).get("lineup", [])
-        away_lineup = selected_match.get("awayTeam", {}).get("lineup", [])
-        
-        col_l1, col_l2 = st.columns(2)
-        
-        if home_lineup and away_lineup:
-            with col_l1:
-                st.write(f"**{home_team['name']}**")
-                for player in home_lineup:
-                    st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
-            with col_l2:
-                st.write(f"**{away_team['name']}**")
-                for player in away_lineup:
-                    st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
-        else:
-            st.info("💡 Generating tactical starting XI using PitchAI Telemetry...")
-            
-            lineup_prompt = f"Provide the likely starting 11 lineup and formation for a match between {home_team['name']} and {away_team['name']}. Format as two clean bulleted lists."
-            
-            try:
-                lineup_res = groq_client.chat.completions.create(
-                    model=SELECTED_MODEL,
-                    messages=[
-                        {"role": "system", "content": "You are PitchAI. Give direct, concise football starting 11 lineups without introductory fluff."},
-                        {"role": "user", "content": lineup_prompt}
-                    ],
-                    temperature=0.3,
-                )
-                st.markdown(lineup_res.choices[0].message.content)
-            except Exception:
-                st.warning("Lineup telemetry unavailable.")
         # Goals parser safely checking multiple data formats
         goals = selected_match.get("goals", [])
         if goals:
@@ -296,7 +261,7 @@ with tab2:
         else:
             st.info("Goal scorer minute timeline is not indexed for this specific match feed.")
 
-       # Lineups Section
+        # Starting Lineups Section
         st.markdown("---")
         st.subheader("📋 Starting Lineups & Squads")
         
@@ -315,7 +280,6 @@ with tab2:
                 for player in away_lineup:
                     st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
         else:
-            # Smart AI Fallback using Groq
             st.info("💡 Generating tactical starting XI using PitchAI Telemetry...")
             
             lineup_prompt = f"Provide the likely starting 11 lineup and formation for a match between {home_team['name']} and {away_team['name']}. Format as two clean bulleted lists."
@@ -332,7 +296,3 @@ with tab2:
                 st.markdown(lineup_res.choices[0].message.content)
             except Exception:
                 st.warning("Lineup telemetry unavailable.")
-        
-       # Get League Standings Positions
-        home_pos, home_pts = get_team_league_position(standings_data, home_team["id"])
-        away_pos, away_pts = get_team_league_position(standings_data, away_team["id"])
