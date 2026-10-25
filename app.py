@@ -17,7 +17,12 @@ st.set_page_config(
 st.markdown("""
     <style>
     .stApp {
-        background: linear-gradient(135deg, #03120c 0%, #08291b 50%, #020b07 100%);
+        background:
+            radial-gradient(ellipse at 12% 0%, rgba(110, 231, 183, 0.14), transparent 28rem),
+            radial-gradient(ellipse at 88% 2%, rgba(52, 211, 153, 0.12), transparent 30rem),
+            radial-gradient(ellipse at 50% 100%, rgba(0, 110, 58, 0.20), transparent 46rem),
+            linear-gradient(160deg, #071018 0%, #0a1b19 48%, #020806 100%);
+        background-attachment: fixed;
         color: #e0f2fe;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
