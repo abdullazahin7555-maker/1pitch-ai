@@ -129,6 +129,7 @@ st.sidebar.title("🏆 Football Hub")
 selected_league_name = st.sidebar.selectbox("Select Competition", list(LEAGUES.keys()))
 league_code = LEAGUES[selected_league_name]
 
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_finished_matches(code):
     if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE" or not FOOTBALL_DATA_API_KEY:
         st.warning("⚠️ FOOTBALL_DATA_API_KEY is missing in Streamlit Secrets.")
@@ -143,6 +144,7 @@ def fetch_finished_matches(code):
         pass
     return []
 
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_upcoming_or_live_matches(code):
     if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE" or not FOOTBALL_DATA_API_KEY:
         return []
@@ -156,6 +158,7 @@ def fetch_upcoming_or_live_matches(code):
         pass
     return []
 
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_standings(code):
     if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE":
         return None
@@ -180,18 +183,26 @@ def get_team_league_position(standings_json, team_id):
     except Exception:
         pass
     return "N/A", "N/A"
+@st.cache_data(ttl=15, show_spinner=False)
 def fetch_live_matches(code):
     if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE" or not FOOTBALL_DATA_API_KEY:
         st.warning("Add FOOTBALL_DATA_API_KEY to Streamlit Secrets to load live scores.")
         return []
-    # LIVE is the API's combined filter for IN_PLAY and PAUSED matches.
+    # LIVE combines IN_PLAY and PAUSED; unfold events needed by the details view.
     url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=LIVE"
-    headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
+    headers = {
+        "X-Auth-Token": FOOTBALL_DATA_API_KEY,
+        "X-Unfold-Goals": "true",
+        "X-Unfold-Lineups": "true",
+    }
     try:
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
             return res.json().get("matches", [])
-        st.warning(f"Live scores could not be loaded (API returned {res.status_code}).")
+        if res.status_code == 429:
+            st.warning("The football data service is rate-limiting requests. Live scores will retry after a short wait.")
+        else:
+            st.warning(f"Live scores could not be loaded (API returned {res.status_code}).")
     except Exception:
         st.warning("Live scores could not be loaded. Check your connection and API key.")
     return []
@@ -379,42 +390,86 @@ with tab4:
         st.dataframe(match_status_list, use_container_width=True, hide_index=True)
     else:
         st.info(f"No upcoming or live matches currently scheduled for {selected_league_name}.")
-        # --- TAB 5: Live Scores Hub with Auto-Refresh ---
+# --- TAB 5: Live Scores and Match Details ---
 with tab5:
     st.header(f"🔴 {selected_league_name} Live Match Center")
-    st.caption("Scores are fetched from football-data.org and refresh every 30 seconds when auto-refresh is enabled.")
+    st.caption("Select a live score to view goal events, starting lineups, and match status.")
     auto_refresh = st.checkbox("Enable Auto-Refresh (Every 30s)", value=False)
-    
-    live_placeholder = st.empty()
-    
-    while True:
-        live_matches = fetch_live_matches(league_code)
-        
-        with live_placeholder.container():
-            if live_matches:
-                st.success(f"⚡ {len(live_matches)} match(es) currently live!")
-                for m in live_matches:
-                    home = m.get('homeTeam', {}).get('name', 'Home')
-                    away = m.get('awayTeam', {}).get('name', 'Away')
-                    score = m.get('score', {}).get('fullTime', {})
-                    h_score = score.get('home')
-                    a_score = score.get('away')
-                    minute = m.get('minute')
-                    status = m.get('status', 'IN_PLAY')
-                    clock = f"{minute}'" if minute is not None else ("HALF-TIME" if status == "PAUSED" else "LIVE")
-                    
-                    # Custom styled match card matching your dark theme
-                    st.markdown(f"""
-                        <div style="background: rgba(0, 255, 135, 0.1); border: 1px solid #00ff87; padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 10px;">
-                            <span style="background: #00ff87; color: #01160e; padding: 2px 8px; border-radius: 6px; font-weight: bold; font-size: 12px;">{clock}</span>
-                            <h3 style="margin: 10px 0; color: #ffffff;">{home} {h_score if h_score is not None else 0} - {a_score if a_score is not None else 0} {away}</h3>
-                        </div>
-                    """, unsafe_allow_html=True)
+
+    live_matches = fetch_live_matches(league_code)
+    if live_matches:
+        st.success(f"⚡ {len(live_matches)} match(es) currently live!")
+        for match in live_matches:
+            home = match.get("homeTeam", {}).get("name", "Home")
+            away = match.get("awayTeam", {}).get("name", "Away")
+            score = match.get("score", {}).get("fullTime", {})
+            home_score = score.get("home") if score.get("home") is not None else 0
+            away_score = score.get("away") if score.get("away") is not None else 0
+            minute = match.get("minute")
+            status = match.get("status", "IN_PLAY")
+            clock = f"{minute}'" if minute is not None else ("HALF-TIME" if status == "PAUSED" else status.replace("_", " "))
+            match_id = match.get("id")
+
+            if st.button(
+                f"⚽  {home}  {home_score} - {away_score}  {away}   ·   {clock}   ·   View details",
+                key=f"live_match_{match_id}",
+                use_container_width=True,
+            ):
+                st.session_state["selected_live_match_id"] = match_id
+
+        selected_id = st.session_state.get("selected_live_match_id")
+        selected_match = next((m for m in live_matches if m.get("id") == selected_id), None)
+        if selected_match:
+            home_team = selected_match.get("homeTeam", {})
+            away_team = selected_match.get("awayTeam", {})
+            match_status = selected_match.get("status", "UNKNOWN").replace("_", " ")
+            minute = selected_match.get("minute")
+            status_text = f"{match_status} · {minute}'" if minute is not None else match_status
+
+            st.markdown("---")
+            st.subheader(f"{home_team.get('name', 'Home')} vs {away_team.get('name', 'Away')}")
+            st.caption(f"Match status: {status_text}")
+
+            st.markdown("#### ⚽ Goal scorers")
+            goals = selected_match.get("goals", [])
+            if goals:
+                for goal in goals:
+                    scorer = (goal.get("scorer") or {}).get("name", "Unknown scorer")
+                    team_name = (goal.get("team") or {}).get("name", "")
+                    goal_minute = goal.get("minute", "?")
+                    injury_time = goal.get("injuryTime")
+                    minute_label = f"{goal_minute}+{injury_time}'" if injury_time else f"{goal_minute}'"
+                    goal_type = goal.get("type")
+                    goal_note = f" ({goal_type.lower().replace('_', ' ')})" if goal_type and goal_type != "REGULAR" else ""
+                    st.write(f"**{minute_label}** — {scorer}{goal_note} · {team_name}")
             else:
-                st.info(f"No matches are currently live right now in {selected_league_name}. Check the Match Status tab for upcoming fixtures!")
-                
-        if not auto_refresh:
-            break
-            
+                st.info("Goal events are not available in the match feed yet.")
+
+            st.markdown("#### 🧾 Starting lineups")
+            home_lineup = home_team.get("lineup", [])
+            away_lineup = away_team.get("lineup", [])
+            if home_lineup or away_lineup:
+                lineup_col1, lineup_col2 = st.columns(2)
+                for col, team, lineup in (
+                    (lineup_col1, home_team, home_lineup),
+                    (lineup_col2, away_team, away_lineup),
+                ):
+                    with col:
+                        st.markdown(f"**{team.get('name', 'Team')}**")
+                        if lineup:
+                            for player in lineup:
+                                shirt = player.get("shirtNumber")
+                                number = f"#{shirt} " if shirt is not None else ""
+                                position = player.get("position")
+                                role = f" — {position}" if position else ""
+                                st.write(f"{number}{player.get('name', 'Player')}{role}")
+                        else:
+                            st.caption("Lineup not provided")
+            else:
+                st.info("Starting lineups are not available in this match feed yet.")
+    else:
+        st.info(f"No matches are currently live in {selected_league_name}. Check the Match Status tab for upcoming fixtures.")
+
+    if auto_refresh:
         time.sleep(30)
         st.rerun()
