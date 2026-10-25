@@ -31,19 +31,23 @@ st.markdown("""
         border-right: 1px solid #10b981;
     }
     h1 {
-        color: #00ff87 !important;
-        text-shadow: 0px 0px 14px rgba(0, 255, 135, 0.5);
-        font-weight: 800;
+        color: #000000 !important;
+        text-shadow: none;
+        font-family: Georgia, "Times New Roman", serif !important;
+        font-weight: 700 !important;
     }
     h2, h3 {
-        color: #6ee7b7 !important;
+        color: #000000 !important;
+        font-family: Georgia, "Times New Roman", serif !important;
+        font-weight: 700 !important;
     }
     .stButton>button, .stDownloadButton>button {
         background: linear-gradient(180deg, #0e3823 0%, #061c12 100%);
-        color: #00ff87;
+        color: #000000;
+        font-family: Georgia, "Times New Roman", serif !important;
         border: 1px solid #059669;
         border-radius: 10px;
-        font-weight: 600;
+        font-weight: 700 !important;
         padding: 8px 14px;
         transition: all 0.3s ease;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
@@ -51,7 +55,7 @@ st.markdown("""
     }
     .stButton>button:hover, .stDownloadButton>button:hover {
         background: #00ff87;
-        color: #01160e;
+        color: #000000 !important;
         border-color: #00ff87;
         box-shadow: 0 0 16px rgba(0, 255, 135, 0.7);
         transform: translateY(-2px);
