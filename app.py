@@ -5,7 +5,6 @@ from gtts import gTTS
 from io import BytesIO
 import base64
 import datetime
-import time  
 # ----------------------------------------------------
 # 1. Page Configuration & Custom CSS
 # ----------------------------------------------------
@@ -73,6 +72,8 @@ st.markdown("""
 # ----------------------------------------------------
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "YOUR_GROQ_API_KEY_HERE")
 FOOTBALL_DATA_API_KEY = st.secrets.get("FOOTBALL_DATA_API_KEY", "YOUR_FOOTBALL_DATA_API_KEY_HERE")
+API_FOOTBALL_KEY = st.secrets.get("API_FOOTBALL_KEY", "")
+API_FOOTBALL_LEAGUE_IDS = {"WC": 1, "PL": 39, "PD": 140, "CL": 2, "SA": 135, "BL1": 78}
 
 groq_client = Groq(api_key=GROQ_API_KEY)
 
@@ -183,29 +184,53 @@ def get_team_league_position(standings_json, team_id):
     except Exception:
         pass
     return "N/A", "N/A"
-@st.cache_data(ttl=15, show_spinner=False)
-def fetch_live_matches(code):
-    if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE" or not FOOTBALL_DATA_API_KEY:
-        st.warning("Add FOOTBALL_DATA_API_KEY to Streamlit Secrets to load live scores.")
-        return []
-    # LIVE combines IN_PLAY and PAUSED; unfold events needed by the details view.
-    url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=LIVE"
-    headers = {
-        "X-Auth-Token": FOOTBALL_DATA_API_KEY,
-        "X-Unfold-Goals": "true",
-        "X-Unfold-Lineups": "true",
-    }
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_api_football_live_matches(api_key):
+    if not api_key:
+        return {"matches": [], "error": "Add API_FOOTBALL_KEY to Streamlit Secrets to use free live match details."}
     try:
-        res = requests.get(url, headers=headers, timeout=10)
-        if res.status_code == 200:
-            return res.json().get("matches", [])
-        if res.status_code == 429:
-            st.warning("The football data service is rate-limiting requests. Live scores will retry after a short wait.")
-        else:
-            st.warning(f"Live scores could not be loaded (API returned {res.status_code}).")
-    except Exception:
-        st.warning("Live scores could not be loaded. Check your connection and API key.")
-    return []
+        response = requests.get(
+            "https://v3.football.api-sports.io/fixtures",
+            params={"live": "all"},
+            headers={"x-apisports-key": api_key},
+            timeout=15,
+        )
+        if response.status_code != 200:
+            return {"matches": [], "error": f"API-Football returned HTTP {response.status_code}."}
+        payload = response.json()
+        errors = payload.get("errors")
+        if errors:
+            error_text = "; ".join(f"{key}: {value}" for key, value in errors.items()) if isinstance(errors, dict) else str(errors)
+            return {"matches": [], "error": f"API-Football: {error_text}"}
+        return {"matches": payload.get("response", []), "error": ""}
+    except requests.RequestException:
+        return {"matches": [], "error": "Could not connect to API-Football. Check your internet connection."}
+    except ValueError:
+        return {"matches": [], "error": "API-Football returned an unreadable response."}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_api_football_match_details(fixture_id, api_key):
+    try:
+        response = requests.get(
+            "https://v3.football.api-sports.io/fixtures",
+            params={"ids": str(fixture_id)},
+            headers={"x-apisports-key": api_key},
+            timeout=15,
+        )
+        if response.status_code != 200:
+            return {"match": None, "error": f"API-Football returned HTTP {response.status_code}."}
+        payload = response.json()
+        errors = payload.get("errors")
+        if errors:
+            error_text = "; ".join(f"{key}: {value}" for key, value in errors.items()) if isinstance(errors, dict) else str(errors)
+            return {"match": None, "error": f"API-Football: {error_text}"}
+        matches = payload.get("response", [])
+        return {"match": matches[0] if matches else None, "error": ""}
+    except requests.RequestException:
+        return {"match": None, "error": "Could not load match details from API-Football."}
+    except ValueError:
+        return {"match": None, "error": "API-Football returned an unreadable match response."}
 
 
 # ----------------------------------------------------
@@ -393,83 +418,120 @@ with tab4:
 # --- TAB 5: Live Scores and Match Details ---
 with tab5:
     st.header(f"🔴 {selected_league_name} Live Match Center")
-    st.caption("Select a live score to view goal events, starting lineups, and match status.")
-    auto_refresh = st.checkbox("Enable Auto-Refresh (Every 30s)", value=False)
+    st.caption("Live scores, goal events, and lineups are provided by API-Football. The free plan has a daily request limit, so scores refresh manually.")
 
-    live_matches = fetch_live_matches(league_code)
-    if live_matches:
-        st.success(f"⚡ {len(live_matches)} match(es) currently live!")
-        for match in live_matches:
-            home = match.get("homeTeam", {}).get("name", "Home")
-            away = match.get("awayTeam", {}).get("name", "Away")
-            score = match.get("score", {}).get("fullTime", {})
-            home_score = score.get("home") if score.get("home") is not None else 0
-            away_score = score.get("away") if score.get("away") is not None else 0
-            minute = match.get("minute")
-            status = match.get("status", "IN_PLAY")
-            clock = f"{minute}'" if minute is not None else ("HALF-TIME" if status == "PAUSED" else status.replace("_", " "))
-            match_id = match.get("id")
-
-            if st.button(
-                f"⚽  {home}  {home_score} - {away_score}  {away}   ·   {clock}   ·   View details",
-                key=f"live_match_{match_id}",
-                use_container_width=True,
-            ):
-                st.session_state["selected_live_match_id"] = match_id
-
-        selected_id = st.session_state.get("selected_live_match_id")
-        selected_match = next((m for m in live_matches if m.get("id") == selected_id), None)
-        if selected_match:
-            home_team = selected_match.get("homeTeam", {})
-            away_team = selected_match.get("awayTeam", {})
-            match_status = selected_match.get("status", "UNKNOWN").replace("_", " ")
-            minute = selected_match.get("minute")
-            status_text = f"{match_status} · {minute}'" if minute is not None else match_status
-
-            st.markdown("---")
-            st.subheader(f"{home_team.get('name', 'Home')} vs {away_team.get('name', 'Away')}")
-            st.caption(f"Match status: {status_text}")
-
-            st.markdown("#### ⚽ Goal scorers")
-            goals = selected_match.get("goals", [])
-            if goals:
-                for goal in goals:
-                    scorer = (goal.get("scorer") or {}).get("name", "Unknown scorer")
-                    team_name = (goal.get("team") or {}).get("name", "")
-                    goal_minute = goal.get("minute", "?")
-                    injury_time = goal.get("injuryTime")
-                    minute_label = f"{goal_minute}+{injury_time}'" if injury_time else f"{goal_minute}'"
-                    goal_type = goal.get("type")
-                    goal_note = f" ({goal_type.lower().replace('_', ' ')})" if goal_type and goal_type != "REGULAR" else ""
-                    st.write(f"**{minute_label}** — {scorer}{goal_note} · {team_name}")
-            else:
-                st.info("Goal events are not available in the match feed yet.")
-
-            st.markdown("#### 🧾 Starting lineups")
-            home_lineup = home_team.get("lineup", [])
-            away_lineup = away_team.get("lineup", [])
-            if home_lineup or away_lineup:
-                lineup_col1, lineup_col2 = st.columns(2)
-                for col, team, lineup in (
-                    (lineup_col1, home_team, home_lineup),
-                    (lineup_col2, away_team, away_lineup),
-                ):
-                    with col:
-                        st.markdown(f"**{team.get('name', 'Team')}**")
-                        if lineup:
-                            for player in lineup:
-                                shirt = player.get("shirtNumber")
-                                number = f"#{shirt} " if shirt is not None else ""
-                                position = player.get("position")
-                                role = f" — {position}" if position else ""
-                                st.write(f"{number}{player.get('name', 'Player')}{role}")
-                        else:
-                            st.caption("Lineup not provided")
-            else:
-                st.info("Starting lineups are not available in this match feed yet.")
+    if not API_FOOTBALL_KEY:
+        st.warning("To show goal scorers and lineups, create a free API-Football key and add it to Streamlit Secrets as API_FOOTBALL_KEY.")
     else:
-        st.info(f"No matches are currently live in {selected_league_name}. Check the Match Status tab for upcoming fixtures.")
+        if st.button("↻ Refresh live scores", use_container_width=True):
+            fetch_api_football_live_matches.clear()
 
-    if auto_refresh:
-        time.sleep(30)
-        st.rerun()
+        api_live_result = fetch_api_football_live_matches(API_FOOTBALL_KEY)
+        if api_live_result["error"]:
+            st.warning(api_live_result["error"])
+        else:
+            league_id = API_FOOTBALL_LEAGUE_IDS.get(league_code)
+            live_matches = [
+                match for match in api_live_result["matches"]
+                if match.get("league", {}).get("id") == league_id
+            ]
+
+            if live_matches:
+                st.success(f"⚡ {len(live_matches)} {selected_league_name} match(es) currently live!")
+                for match in live_matches:
+                    fixture_id = match.get("fixture", {}).get("id")
+                    home = match.get("teams", {}).get("home", {}).get("name", "Home")
+                    away = match.get("teams", {}).get("away", {}).get("name", "Away")
+                    goals = match.get("goals", {})
+                    home_goals = goals.get("home") if goals.get("home") is not None else 0
+                    away_goals = goals.get("away") if goals.get("away") is not None else 0
+                    status = match.get("fixture", {}).get("status", {})
+                    elapsed = status.get("elapsed")
+                    clock = f"{elapsed}'" if elapsed is not None else status.get("long", "LIVE")
+
+                    if st.button(
+                        f"⚽  {home}  {home_goals} - {away_goals}  {away}   ·   {clock}   ·   View details",
+                        key=f"api_live_match_{fixture_id}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["selected_api_football_fixture_id"] = fixture_id
+
+                selected_fixture_id = st.session_state.get("selected_api_football_fixture_id")
+                selected_match_stub = next(
+                    (match for match in live_matches if match.get("fixture", {}).get("id") == selected_fixture_id),
+                    None,
+                )
+                if selected_match_stub:
+                    details_result = fetch_api_football_match_details(selected_fixture_id, API_FOOTBALL_KEY)
+                    if details_result["error"]:
+                        st.warning(details_result["error"])
+                    elif details_result["match"]:
+                        details = details_result["match"]
+                        teams = details.get("teams", {})
+                        home_team = teams.get("home", {})
+                        away_team = teams.get("away", {})
+                        status = details.get("fixture", {}).get("status", {})
+                        status_text = status.get("long", "Unknown status")
+                        elapsed = status.get("elapsed")
+                        if elapsed is not None:
+                            status_text += f" · {elapsed}'"
+
+                        st.markdown("---")
+                        st.subheader(
+                            f"{home_team.get('name', 'Home')} {details.get('goals', {}).get('home', 0)} - "
+                            f"{details.get('goals', {}).get('away', 0)} {away_team.get('name', 'Away')}"
+                        )
+                        st.caption(f"Match status: {status_text}")
+
+                        st.markdown("#### ⚽ Goal scorers")
+                        events = details.get("events") or []
+                        goal_events = [event for event in events if event.get("type") == "Goal"]
+                        if goal_events:
+                            for event in goal_events:
+                                event_time = event.get("time", {})
+                                minute = event_time.get("elapsed", "?")
+                                extra = event_time.get("extra")
+                                minute_label = f"{minute}+{extra}'" if extra else f"{minute}'"
+                                player = (event.get("player") or {}).get("name", "Unknown player")
+                                team_name = (event.get("team") or {}).get("name", "")
+                                detail = event.get("detail", "Goal")
+                                assist = (event.get("assist") or {}).get("name")
+                                assist_text = f" (assist: {assist})" if assist else ""
+                                st.write(f"**{minute_label}** — {player}{assist_text} · {team_name} · {detail}")
+                        else:
+                            st.info("No goal events were returned for this match. Coverage can vary by competition.")
+
+                        st.markdown("#### 🧾 Starting lineups")
+                        lineups = details.get("lineups") or []
+                        if lineups:
+                            lineup_col1, lineup_col2 = st.columns(2)
+                            for col, lineup in zip((lineup_col1, lineup_col2), lineups):
+                                with col:
+                                    team = lineup.get("team", {})
+                                    formation = lineup.get("formation")
+                                    formation_text = f" · {formation}" if formation else ""
+                                    st.markdown(f"**{team.get('name', 'Team')}{formation_text}**")
+                                    starters = lineup.get("startXI") or []
+                                    for entry in starters:
+                                        player = entry.get("player", {})
+                                        number = player.get("number")
+                                        shirt = f"#{number} " if number is not None else ""
+                                        position = player.get("pos")
+                                        role = f" — {position}" if position else ""
+                                        st.write(f"{shirt}{player.get('name', 'Player')}{role}")
+                                    substitutes = lineup.get("substitutes") or []
+                                    if substitutes:
+                                        with st.expander(f"{team.get('name', 'Team')} bench"):
+                                            for entry in substitutes:
+                                                player = entry.get("player", {})
+                                                number = player.get("number")
+                                                shirt = f"#{number} " if number is not None else ""
+                                                st.write(f"{shirt}{player.get('name', 'Player')}")
+                        else:
+                            st.info("Lineups are not available yet for this match or competition.")
+                    else:
+                        st.info("Match details have not been published by API-Football yet.")
+            elif league_id is None:
+                st.warning("This competition is not mapped for API-Football yet.")
+            else:
+                st.info(f"No {selected_league_name} matches are live right now.")
