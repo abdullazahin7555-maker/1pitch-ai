@@ -214,7 +214,7 @@ def fetch_api_football_match_details(fixture_id, api_key):
     try:
         response = requests.get(
             "https://v3.football.api-sports.io/fixtures",
-            params={"ids": str(fixture_id)},
+            params={"id": str(fixture_id)},
             headers={"x-apisports-key": api_key},
             timeout=15,
         )
