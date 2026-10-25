@@ -5,7 +5,7 @@ from gtts import gTTS
 from io import BytesIO
 import base64
 import datetime
-
+import time  
 # ----------------------------------------------------
 # 1. Page Configuration & Custom CSS
 # ----------------------------------------------------
@@ -180,17 +180,34 @@ def get_team_league_position(standings_json, team_id):
     except Exception:
         pass
     return "N/A", "N/A"
+def fetch_live_matches(code):
+    if FOOTBALL_DATA_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY_HERE" or not FOOTBALL_DATA_API_KEY:
+        st.warning("Add FOOTBALL_DATA_API_KEY to Streamlit Secrets to load live scores.")
+        return []
+    # LIVE is the API's combined filter for IN_PLAY and PAUSED matches.
+    url = f"https://api.football-data.org/v4/competitions/{code}/matches?status=LIVE"
+    headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            return res.json().get("matches", [])
+        st.warning(f"Live scores could not be loaded (API returned {res.status_code}).")
+    except Exception:
+        st.warning("Live scores could not be loaded. Check your connection and API key.")
+    return []
+
 
 # ----------------------------------------------------
 # 5. Main Layout with Tabs
 # ----------------------------------------------------
 st.title("⚽ PitchAI Virtual Assistant")
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "💬 PitchAI Chat", 
     "📅 Match Center & Telemetry", 
     "🏆 League Standings", 
-    "⚡ Match Status"
+    "⚡ Match Status",
+    "🔴 Live Scores"   # <--- 5th Tab added here
 ])
 
 # --- TAB 1: Chatbot Interface ---
@@ -203,7 +220,6 @@ with tab1:
             {"role": "assistant", "content": f"Welcome! I am PitchAI, tuned into {selected_league_name}. Ask me anything!"}
         ]
 
-    # Create a container for the chat history so it scrolls independently
     chat_container = st.container()
     
     with chat_container:
@@ -212,7 +228,6 @@ with tab1:
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
 
-    # Chat input stays cleanly at the bottom of the tab view
     chat_input = st.chat_input("Ask PitchAI about matches, lineups, or stats...")
     
     if chat_input:
@@ -242,6 +257,7 @@ with tab2:
     st.header(f"📊 {selected_league_name} Match Center")
     
     finished_matches = fetch_finished_matches(league_code)
+    standings_data = fetch_standings(league_code)
     
     if finished_matches:
         match_options = {}
@@ -259,78 +275,54 @@ with tab2:
         selected_match_label = st.selectbox("Select a Recent Match to View Detailed Telemetry", list(match_options.keys()))
         selected_match = match_options[selected_match_label]
         
-        home_team = selected_match.get("homeTeam", {})
-        away_team = selected_match.get("awayTeam", {})
-        score = selected_match.get("score", {}).get("fullTime", {})
-        h_score = score.get("home", 0) if score and score.get("home") is not None else 0
-        a_score = score.get("away", 0) if score and score.get("away") is not None else 0
+        home_team = selected_match["homeTeam"]
+        away_team = selected_match["awayTeam"]
         
         st.markdown("---")
         
-        # --- 1. GOAL SCORERS SECTION ---
-        st.subheader("⚽ Match Timeline & Goals")
         goals = selected_match.get("goals", [])
-        
-        if h_score == 0 and a_score == 0:
-            st.info("🤝 Match ended in a 0 - 0 draw. No goals were scored.")
-        elif goals:
+        if goals:
+            st.markdown("#### ⚽ Goal Scorers")
             for goal in goals:
-                scorer = goal.get("scorer", {}).get("name", "Goal Scorer")
+                scorer = goal.get("scorer", {}).get("name", "Unknown Player")
                 minute = goal.get("minute", "?")
                 team_info = goal.get("team", {}).get("name", "")
-                st.write(f"• **{minute}'** ⚽ {scorer} ({team_info})")
+                st.write(f"• **{minute}'** — {scorer} ({team_info})")
         else:
-            # Smart AI Fallback for Goals when API data is omitted
-            with st.spinner("🤖 PitchAI Telemetry: Retrieving goal scorers..."):
-                goal_prompt = f"Provide a brief list of the goal scorers with approximate goal minutes for the match: {home_team.get('name')} {h_score} - {a_score} {away_team.get('name')}. Keep it short using bullet points."
-                try:
-                    goal_res = groq_client.chat.completions.create(
-                        model=SELECTED_MODEL,
-                        messages=[
-                            {"role": "system", "content": "You are PitchAI. List match goal scorers concisely based on official match results."},
-                            {"role": "user", "content": goal_prompt}
-                        ],
-                        temperature=0.2,
-                    )
-                    st.markdown(goal_res.choices[0].message.content)
-                except Exception:
-                    st.info(f"Match ended {h_score} - {a_score}.")
+            st.info("Goal scorer minute timeline is not indexed for this specific match feed.")
 
-        # --- 2. STARTING LINEUPS SECTION ---
         st.markdown("---")
         st.subheader("📋 Starting Lineups & Squads")
         
-        home_lineup = home_team.get("lineup", [])
-        away_lineup = away_team.get("lineup", [])
+        home_lineup = selected_match.get("homeTeam", {}).get("lineup", [])
+        away_lineup = selected_match.get("awayTeam", {}).get("lineup", [])
+        
+        col_l1, col_l2 = st.columns(2)
         
         if home_lineup and away_lineup:
-            col_l1, col_l2 = st.columns(2)
             with col_l1:
-                st.write(f"**{home_team.get('name')}**")
+                st.write(f"**{home_team['name']}**")
                 for player in home_lineup:
                     st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
             with col_l2:
-                st.write(f"**{away_team.get('name')}**")
+                st.write(f"**{away_team['name']}**")
                 for player in away_lineup:
                     st.text(f"• #{player.get('shirtNumber', '-')} {player.get('name', 'Player')}")
         else:
-            # Smart AI Fallback for Lineups
-            with st.spinner("🤖 PitchAI Telemetry: Generating tactical starting XI..."):
-                lineup_prompt = f"Provide the official or expected starting 11 lineup and formation for {home_team.get('name')} vs {away_team.get('name')}. Show two clean bullet lists for Home and Away."
-                try:
-                    lineup_res = groq_client.chat.completions.create(
-                        model=SELECTED_MODEL,
-                        messages=[
-                            {"role": "system", "content": "You are PitchAI. Give direct, clean football starting XI lineups without intro text."},
-                            {"role": "user", "content": lineup_prompt}
-                        ],
-                        temperature=0.3,
-                    )
-                    st.markdown(lineup_res.choices[0].message.content)
-                except Exception:
-                    st.warning("Lineup telemetry generator is temporarily offline.")
-    else:
-        st.warning("No finished matches found for this league.")
+            st.info("💡 Generating tactical starting XI using PitchAI Telemetry...")
+            lineup_prompt = f"Provide the likely starting 11 lineup and formation for a match between {home_team['name']} and {away_team['name']}. Format as two clean bulleted lists."
+            try:
+                lineup_res = groq_client.chat.completions.create(
+                    model=SELECTED_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are PitchAI. Give direct, concise football starting 11 lineups without introductory fluff."},
+                        {"role": "user", "content": lineup_prompt}
+                    ],
+                    temperature=0.3,
+                )
+                st.markdown(lineup_res.choices[0].message.content)
+            except Exception:
+                st.warning("Lineup telemetry unavailable.")
 
 # --- TAB 3: Live League Standings ---
 with tab3:
@@ -387,3 +379,42 @@ with tab4:
         st.dataframe(match_status_list, use_container_width=True, hide_index=True)
     else:
         st.info(f"No upcoming or live matches currently scheduled for {selected_league_name}.")
+        # --- TAB 5: Live Scores Hub with Auto-Refresh ---
+with tab5:
+    st.header(f"🔴 {selected_league_name} Live Match Center")
+    st.caption("Scores are fetched from football-data.org and refresh every 30 seconds when auto-refresh is enabled.")
+    auto_refresh = st.checkbox("Enable Auto-Refresh (Every 30s)", value=False)
+    
+    live_placeholder = st.empty()
+    
+    while True:
+        live_matches = fetch_live_matches(league_code)
+        
+        with live_placeholder.container():
+            if live_matches:
+                st.success(f"⚡ {len(live_matches)} match(es) currently live!")
+                for m in live_matches:
+                    home = m.get('homeTeam', {}).get('name', 'Home')
+                    away = m.get('awayTeam', {}).get('name', 'Away')
+                    score = m.get('score', {}).get('fullTime', {})
+                    h_score = score.get('home')
+                    a_score = score.get('away')
+                    minute = m.get('minute')
+                    status = m.get('status', 'IN_PLAY')
+                    clock = f"{minute}'" if minute is not None else ("HALF-TIME" if status == "PAUSED" else "LIVE")
+                    
+                    # Custom styled match card matching your dark theme
+                    st.markdown(f"""
+                        <div style="background: rgba(0, 255, 135, 0.1); border: 1px solid #00ff87; padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 10px;">
+                            <span style="background: #00ff87; color: #01160e; padding: 2px 8px; border-radius: 6px; font-weight: bold; font-size: 12px;">{clock}</span>
+                            <h3 style="margin: 10px 0; color: #ffffff;">{home} {h_score if h_score is not None else 0} - {a_score if a_score is not None else 0} {away}</h3>
+                        </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info(f"No matches are currently live right now in {selected_league_name}. Check the Match Status tab for upcoming fixtures!")
+                
+        if not auto_refresh:
+            break
+            
+        time.sleep(30)
+        st.rerun()
